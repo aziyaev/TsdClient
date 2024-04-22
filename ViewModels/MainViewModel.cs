@@ -20,7 +20,9 @@ namespace TsdClient.ViewModels
         public ICommand DeleteProductCommand { get; set; }
         public ICommand LoadDataCommand { get; set; }
 
-        private string serverIp = "192.168.3.80";
+        private Queue<string> pendingCommands = new Queue<string>();
+
+        private string serverIp = "192.168.0.107";
         private int serverPort = 8888;
 
         private string? productCode;
@@ -61,25 +63,29 @@ namespace TsdClient.ViewModels
             LoadDataCommand = new DelegateCommand(LoadDataAsync);
         }
 
-        private async void AddProductAsync()
+        private void AddProductAsync()
         {
             if (string.IsNullOrWhiteSpace(ProductCode) || ProductQuantity == 0)
                 return;
             Products.Add(new Product { Code = ProductCode, Quantity = ProductQuantity });
-            await SendCommandToServerAsync($"+{Products.Last().Code},{Products.Last().Quantity}");
+            string command = $"+{Products.Last().Code},{Products.Last().Quantity}";
+
+            EnqueueCommand(command);
             ProductCode = string.Empty;
             ProductQuantity = 0;
         }
 
         private bool CanDeleteProduct() => Products.Any() && SelectedProduct != null;
 
-        private async void DeleteProductAsync()
+        private void DeleteProductAsync()
         {
             if(SelectedProduct != null)
             {
                 string selectedProduct = SelectedProduct.Code;
                 Products.Remove(SelectedProduct);
-                await SendCommandToServerAsync($"-{selectedProduct}");
+                string command = $"-{selectedProduct}";
+
+                EnqueueCommand(command);
             }
         }
 
@@ -127,21 +133,39 @@ namespace TsdClient.ViewModels
 
         private async Task SendCommandToServerAsync(string command)
         {
-            try
+            using(var client = new TcpClient())
             {
-                using(var client = new TcpClient())
-                {
-                    await client.ConnectAsync(serverIp, serverPort);
+                await client.ConnectAsync(serverIp, serverPort);
 
-                    using (var stream = client.GetStream())
-                    {
-                        byte[] bytes = Encoding.UTF8.GetBytes(command);
-                        await stream.WriteAsync(bytes, 0, bytes.Length);
-                    }
+                using (var stream = client.GetStream())
+                {
+                    byte[] bytes = Encoding.UTF8.GetBytes(command);
+                    await stream.WriteAsync(bytes, 0, bytes.Length);
                 }
-            } catch (Exception ex)
+            }
+        }
+
+        private void EnqueueCommand(string command)
+        {
+            pendingCommands.Enqueue(command);
+            Task.Run(() => ProcessPendingCommandsAsync());
+        }
+
+        private async Task ProcessPendingCommandsAsync()
+        {
+            while (pendingCommands.Any())
             {
-                Console.WriteLine("Error sending command to server: " + ex.Message);
+                string command = pendingCommands.Dequeue();
+                try
+                {
+                    await SendCommandToServerAsync(command);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error sending command: " + ex.Message);
+                    pendingCommands.Enqueue(command);
+                    await Task.Delay(1000);
+                }
             }
         }
 

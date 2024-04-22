@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TsdClient" xmlns:local1="clr-namespace:TsdClient.ViewModels"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="TSDClient" Height="450" Width="800">
     <Window.DataContext>
         <local1:MainViewModel/>
     </Window.DataContext>
